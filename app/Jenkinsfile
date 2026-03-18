@@ -10,6 +10,14 @@ pipeline {
     // Change if your region differs
     AWS_REGION = 'us-east-1'
 
+    withCredentials([[$class: 'AmazonWebServicesCredentialsBinding', credentialsId: 'aws-creds']]) {
+  sh '''
+    aws ecr get-login-password --region $AWS_REGION | docker login --username AWS --password-stdin $ECR_URI
+    docker tag sample-app:latest $ECR_URI:latest
+    docker push $ECR_URI:latest
+  '''
+    }
+
     // Put ECR repo here later, example:
     // ECR_URI = '123456789012.dkr.ecr.us-east-1.amazonaws.com/sample-app'
     ECR_URI = ''

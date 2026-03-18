@@ -7,20 +7,13 @@ pipeline {
   }
 
   environment {
-    // Change if your region differs
     AWS_REGION = 'us-east-1'
+    // Put your real ECR repo URI here:
+    // Example: 730335390044.dkr.ecr.us-east-1.amazonaws.com/sample-app
+    ECR_URI = '730335390044.dkr.ecr.us-east-1.amazonaws.com/sample-app'
 
-    withCredentials([[$class: 'AmazonWebServicesCredentialsBinding', credentialsId: 'aws-creds']]) {
-  sh '''
-    aws ecr get-login-password --region $AWS_REGION | docker login --username AWS --password-stdin $ECR_URI
-    docker tag sample-app:latest $ECR_URI:latest
-    docker push $ECR_URI:latest
-  '''
-    }
-
-    // Put ECR repo here later, example:
-    // ECR_URI = '123456789012.dkr.ecr.us-east-1.amazonaws.com/sample-app'
-    ECR_URI = ''
+    // Fix AWS CLI pager issue in CI environments (prevents "less" error)
+    AWS_PAGER = ''
   }
 
   stages {
@@ -73,17 +66,21 @@ pipeline {
       }
     }
 
-    stage('Push to ECR (optional)') {
+    stage('Push to ECR') {
       when {
         expression { return env.ECR_URI?.trim() }
       }
       steps {
         dir('app') {
-          sh '''
-            aws ecr get-login-password --region $AWS_REGION | docker login --username AWS --password-stdin $ECR_URI
-            docker tag sample-app:latest $ECR_URI:latest
-            docker push $ECR_URI:latest
-          '''
+          withCredentials([[$class: 'AmazonWebServicesCredentialsBinding', credentialsId: 'aws-creds']]) {
+            sh '''
+              aws ecr get-login-password --region $AWS_REGION \
+              | docker login --username AWS --password-stdin $ECR_URI
+
+              docker tag sample-app:latest $ECR_URI:latest
+              docker push $ECR_URI:latest
+            '''
+          }
         }
       }
     }
@@ -91,7 +88,7 @@ pipeline {
 
   post {
     always {
-      echo "Pipeline finished. Check SonarQube + Nexus for results."
+      echo "Pipeline finished. Check SonarQube + Nexus + ECR for results."
     }
   }
 }

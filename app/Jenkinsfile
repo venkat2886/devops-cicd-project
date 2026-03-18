@@ -1,0 +1,89 @@
+pipeline {
+  agent any
+
+  tools {
+    jdk 'jdk17'
+    maven 'maven3'
+  }
+
+  environment {
+    // Change if your region differs
+    AWS_REGION = 'us-east-1'
+
+    // Put ECR repo here later, example:
+    // ECR_URI = '123456789012.dkr.ecr.us-east-1.amazonaws.com/sample-app'
+    ECR_URI = ''
+  }
+
+  stages {
+
+    stage('Checkout') {
+      steps {
+        checkout scm
+      }
+    }
+
+    stage('Build') {
+      steps {
+        dir('app') {
+          sh 'mvn -B clean package'
+        }
+      }
+    }
+
+    stage('SonarQube Analysis') {
+      steps {
+        dir('app') {
+          withSonarQubeEnv('sonarqube') {
+            sh 'mvn -B sonar:sonar'
+          }
+        }
+      }
+    }
+
+    stage('Quality Gate') {
+      steps {
+        timeout(time: 5, unit: 'MINUTES') {
+          waitForQualityGate abortPipeline: true
+        }
+      }
+    }
+
+    stage('Publish to Nexus') {
+      steps {
+        dir('app') {
+          sh 'mvn -B deploy'
+        }
+      }
+    }
+
+    stage('Docker Build') {
+      steps {
+        dir('app') {
+          sh 'docker build -t sample-app:latest .'
+        }
+      }
+    }
+
+    stage('Push to ECR (optional)') {
+      when {
+        expression { return env.ECR_URI?.trim() }
+      }
+      steps {
+        dir('app') {
+          sh '''
+            aws ecr get-login-password --region $AWS_REGION | docker login --username AWS --password-stdin $ECR_URI
+            docker tag sample-app:latest $ECR_URI:latest
+            docker push $ECR_URI:latest
+          '''
+        }
+      }
+    }
+  }
+
+  post {
+    always {
+      echo "Pipeline finished. Check SonarQube + Nexus for results."
+    }
+  }
+}
